@@ -33,7 +33,8 @@ logger = logging.getLogger(__name__)
 def train_prophet_model(data_hash, product_name, sales_data):
     """Train and cache Prophet model for specific product data"""
     try:
-        df = pd.DataFrame(sales_data)
+        dict_rows = [dict(row) for row in sales_data]
+        df = pd.DataFrame(dict_rows)
         df['ds'] = pd.to_datetime(df['timestamp'])
         df['y'] = df['quantitySold'].astype(float)
 
