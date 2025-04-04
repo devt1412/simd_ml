@@ -1,4 +1,10 @@
 flask==2.3.2
-pandas==2.0.3
-prophet==1.1.5
 gunicorn==21.2.0
+pandas==1.5.3
+prophet==1.1.3
+numpy==1.23.5
+pystan==2.19.1.1
+convertdate>=2.4.0
+holidays>=0.25
+lunarcalendar>=0.0.9
+tqdm>=4.36.1

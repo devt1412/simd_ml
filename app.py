@@ -1,3 +1,14 @@
+import sys
+import numpy as np
+
+# Check numpy version compatibility
+try:
+    if np.__version__ != '1.23.5':
+        raise ImportError("Incorrect numpy version detected")
+except Exception as e:
+    print(f"NUMPY VERSION CHECK FAILED: {str(e)}", file=sys.stderr)
+    sys.exit(1)
+
 from flask import Flask, request, jsonify
 from prophet import Prophet
 import pandas as pd
