@@ -115,7 +115,7 @@ def predict():
                 model = train_prophet_model(
                     data_hash,
                     product,
-                    tuple(product_data)  # must be hashable
+                    tuple(frozenset(d.items()) for d in product_data)  # must be hashable
                 )
 
                 predictions[product] = {
