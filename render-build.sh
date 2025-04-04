@@ -1,10 +1,15 @@
 #!/bin/bash
-# render-build.sh
-echo "----- Installing dependencies with exact versions -----"
+set -e  # Exit on error
+
+echo "----- Stage 1: Install build essentials -----"
+pip install --upgrade pip
+pip install wheel setuptools cython numpy==1.23.5
+
+echo "----- Stage 2: Install remaining requirements -----"
 pip install -r requirements.txt --no-cache-dir
 
-echo "----- Verifying installations -----"
-pip freeze
-
-echo "----- Checking numpy/pandas compatibility -----"
-python -c "import numpy as np; import pandas as pd; print(f'numpy: {np.__version__}, pandas: {pd.__version__}')"
+echo "----- Verification -----"
+python -c "
+import sys, numpy as np, pandas as pd;
+print(f'Python {sys.version}\nNumPy {np.__version__}\nPandas {pd.__version__}');
+"
