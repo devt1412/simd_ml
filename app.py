@@ -15,7 +15,6 @@ import pandas as pd
 import logging
 from datetime import datetime
 from functools import lru_cache
-import sys
 from werkzeug.exceptions import HTTPException
 
 # Initialize Flask app
@@ -25,9 +24,7 @@ app = Flask(__name__)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 
@@ -37,24 +34,27 @@ def train_prophet_model(data_hash, product_name, sales_data):
     """Train and cache Prophet model for specific product data"""
     try:
         df = pd.DataFrame(sales_data)
-        
-        # Data preparation
         df['ds'] = pd.to_datetime(df['timestamp'])
         df['y'] = df['quantitySold'].astype(float)
-        
+
         # Resample to daily sums (handles multiple entries per day)
         df = df.resample('D', on='ds')['y'].sum().reset_index()
-        
-        # Train model
+
+        logger.info(f"Resampled DataFrame for {product_name}:\n{df}")
+        logger.info(f"Unique days for {product_name}: {df['ds'].nunique()}")
+
+        if df['ds'].nunique() < 5:
+            raise ValueError(f"Not enough unique days to train model for {product_name}")
+
         model = Prophet(
             daily_seasonality=True,
             weekly_seasonality=True,
-            yearly_seasonality=False,  # Disabled for small datasets
-            changepoint_prior_scale=0.05  # Less sensitive to changes
+            yearly_seasonality=False,
+            changepoint_prior_scale=0.05
         )
         model.fit(df)
         return model
-        
+
     except Exception as e:
         logger.error(f"Model training failed for {product_name}: {str(e)}")
         raise
@@ -64,11 +64,9 @@ def make_predictions(model, periods, freq='D'):
     future = model.make_future_dataframe(
         periods=periods,
         freq=freq,
-        include_history=False  # Only return future dates
+        include_history=False
     )
     forecast = model.predict(future)
-    
-    # Format output
     result = forecast[['ds', 'yhat']].rename(columns={'yhat': 'predictedSales'})
     result['ds'] = result['ds'].dt.strftime('%Y-%m-%d')
     return result.to_dict('records')
@@ -77,76 +75,74 @@ def make_predictions(model, periods, freq='D'):
 def predict():
     """Main prediction endpoint"""
     try:
-        # Validate request
         if not request.is_json:
             return jsonify({"error": "Request must be JSON"}), 400
-            
+
         data = request.get_json()
-        
-        # Validate required fields
+
         if 'sales_history' not in data or not isinstance(data['sales_history'], list):
             return jsonify({"error": "Missing or invalid sales_history"}), 400
-        
-        # Process each product separately
+
         predictions = {}
         sales_data = data['sales_history']
-        
-        # Group by product
         products = {item['name'] for item in sales_data if 'name' in item}
-        
+
+        logger.info(f"Received data for products: {products}")
+
         for product in products:
+            logger.info(f"Processing product: {product}")
+
+            # Filter and validate
+            product_data = [
+                item for item in sales_data
+                if item.get('name') == product
+                and isinstance(item.get('quantitySold'), (int, float))
+                and isinstance(item.get('timestamp'), str)
+            ]
+
+            logger.info(f"Filtered data for {product}: {product_data}")
+
+            if not product_data:
+                logger.warning(f"No valid data for product '{product}' after filtering.")
+                continue
+
             try:
-                # Filter product data and validate
-                product_data = [
-                    item for item in sales_data 
-                    if item.get('name') == product
-                    and isinstance(item.get('quantitySold'), (int, float))
-                    and isinstance(item.get('timestamp'), str)
-                ]
-                
-                if not product_data:
-                    continue
-                
-                # Create hash for caching
                 data_hash = hash(tuple(sorted(
-                    (item['timestamp'], item['quantitySold']) 
+                    (item['timestamp'], item['quantitySold'])
                     for item in product_data
                 )))
-                
-                # Train/get cached model
+
                 model = train_prophet_model(
-                    data_hash, 
-                    product, 
-                    tuple(product_data)  # Convert to hashable tuple
+                    data_hash,
+                    product,
+                    tuple(product_data)  # must be hashable
                 )
-                
-                # Generate predictions
+
                 predictions[product] = {
                     "next_week": make_predictions(model, 7),
                     "next_month": make_predictions(model, 30),
-                    "next_year": make_predictions(model, 12, 'M'),  # Monthly
+                    "next_year": make_predictions(model, 12, 'M')
                 }
-                
+
             except Exception as e:
                 logger.error(f"Prediction failed for {product}: {str(e)}")
                 continue
-        
+
         if not predictions:
             return jsonify({"error": "No valid products found"}), 400
-            
+
         return jsonify({
             "success": True,
             "predictions": predictions,
             "generated_at": datetime.utcnow().isoformat() + "Z"
         })
-        
+
     except Exception as e:
-        logger.error(f"API error: {str(e)}")
+        logger.error(f"API error: {str(e)}", exc_info=True)
         return jsonify({"error": "Internal server error"}), 500
 
 @app.errorhandler(HTTPException)
 def handle_exception(e):
-    """JSON error handling"""
     return jsonify({
         "error": e.name,
         "message": e.description
