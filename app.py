@@ -118,13 +118,46 @@ def predict():
         data = request.get_json()
 
         # Validating that sales history is provided and in correct format
-        if 'sales_history' not in data or not isinstance(data['sales_history'], list):
-            return jsonify({"error": "Missing or invalid sales_history"}), 400
+        if 'sales_history' not in data:
+            return jsonify({"error": "Missing sales_history field"}), 400
+        
+        if not isinstance(data['sales_history'], list):
+            return jsonify({"error": "sales_history must be an array"}), 400
+            
+        if not data['sales_history']:
+            return jsonify({"error": "sales_history array is empty"}), 400
 
-        predictions = {}
+        # Validate each entry in sales_history
+        for idx, item in enumerate(data['sales_history']):
+            if not isinstance(item, dict):
+                return jsonify({"error": f"Item at index {idx} must be an object"}), 400
+                
+            if 'name' not in item:
+                return jsonify({"error": f"Missing 'name' in item at index {idx}"}), 400
+                
+            if 'quantitySold' not in item:
+                return jsonify({"error": f"Missing 'quantitySold' in item at index {idx}"}), 400
+                
+            if 'timestamp' not in item:
+                return jsonify({"error": f"Missing 'timestamp' in item at index {idx}"}), 400
+                
+            if not isinstance(item['name'], str):
+                return jsonify({"error": f"'name' must be a string at index {idx}"}), 400
+                
+            if not isinstance(item['quantitySold'], (int, float)):
+                return jsonify({"error": f"'quantitySold' must be a number at index {idx}"}), 400
+                
+            if not isinstance(item['timestamp'], str):
+                return jsonify({"error": f"'timestamp' must be a string at index {idx}"}), 400
+                
+            try:
+                pd.to_datetime(item['timestamp'])
+            except Exception:
+                return jsonify({"error": f"Invalid timestamp format at index {idx}. Use ISO format (YYYY-MM-DD HH:MM:SS)"}), 400
+
         sales_data = data['sales_history']
 
-        # Geting unique product names from the data
+        predictions = {}
         products = {item['name'] for item in sales_data if 'name' in item}
 
         logger.info(f"Received data for products: {products}")
