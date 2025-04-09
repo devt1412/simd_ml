@@ -64,32 +64,8 @@ def train_prophet_model(data_hash, product_name, sales_data):
         logger.error(f"Model training failed for {product_name}: {str(e)}")
         raise
 
-def calculate_accuracy_metrics(model, df):
-    """Calculates accuracy metrics for the model predictions."""
-    # Get the predictions for historical data
-    historical_forecast = model.predict(model.history)
-    
-    # Calculate Mean Absolute Percentage Error (MAPE)
-    y_true = model.history['y'].values
-    y_pred = historical_forecast['yhat'].values
-    
-    # Calculate MAPE avoiding division by zero
-    mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
-    
-    # Calculate Mean Absolute Error (MAE)
-    mae = np.mean(np.abs(y_true - y_pred))
-    
-    return {
-        'mape': round(mape, 2),  # MAPE as percentage
-        'mae': round(mae, 2),    # Mean Absolute Error
-        'accuracy': round(100 - mape, 2)  # Convert MAPE to accuracy percentage
-    }
-
 def make_predictions(model, periods, freq='D'):
     """Generates future sales predictions from the trained model."""
-    # Calculate accuracy metrics
-    accuracy_metrics = calculate_accuracy_metrics(model, model.history)
-    
     # Creating a future date range to predict over
     future = model.make_future_dataframe(
         periods=periods,
@@ -101,11 +77,7 @@ def make_predictions(model, periods, freq='D'):
     forecast = model.predict(future)
     result = forecast[['ds', 'yhat']].rename(columns={'yhat': 'predictedSales'})
     result['ds'] = result['ds'].dt.strftime('%Y-%m-%d')
-    
-    return {
-        'predictions': result.to_dict('records'),
-        'accuracy_metrics': accuracy_metrics
-    }
+    return result.to_dict('records')
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -118,46 +90,13 @@ def predict():
         data = request.get_json()
 
         # Validating that sales history is provided and in correct format
-        if 'sales_history' not in data:
-            return jsonify({"error": "Missing sales_history field"}), 400
-        
-        if not isinstance(data['sales_history'], list):
-            return jsonify({"error": "sales_history must be an array"}), 400
-            
-        if not data['sales_history']:
-            return jsonify({"error": "sales_history array is empty"}), 400
-
-        # Validate each entry in sales_history
-        for idx, item in enumerate(data['sales_history']):
-            if not isinstance(item, dict):
-                return jsonify({"error": f"Item at index {idx} must be an object"}), 400
-                
-            if 'name' not in item:
-                return jsonify({"error": f"Missing 'name' in item at index {idx}"}), 400
-                
-            if 'quantitySold' not in item:
-                return jsonify({"error": f"Missing 'quantitySold' in item at index {idx}"}), 400
-                
-            if 'timestamp' not in item:
-                return jsonify({"error": f"Missing 'timestamp' in item at index {idx}"}), 400
-                
-            if not isinstance(item['name'], str):
-                return jsonify({"error": f"'name' must be a string at index {idx}"}), 400
-                
-            if not isinstance(item['quantitySold'], (int, float)):
-                return jsonify({"error": f"'quantitySold' must be a number at index {idx}"}), 400
-                
-            if not isinstance(item['timestamp'], str):
-                return jsonify({"error": f"'timestamp' must be a string at index {idx}"}), 400
-                
-            try:
-                pd.to_datetime(item['timestamp'])
-            except Exception:
-                return jsonify({"error": f"Invalid timestamp format at index {idx}. Use ISO format (YYYY-MM-DD HH:MM:SS)"}), 400
-
-        sales_data = data['sales_history']
+        if 'sales_history' not in data or not isinstance(data['sales_history'], list):
+            return jsonify({"error": "Missing or invalid sales_history"}), 400
 
         predictions = {}
+        sales_data = data['sales_history']
+
+        # Geting unique product names from the data
         products = {item['name'] for item in sales_data if 'name' in item}
 
         logger.info(f"Received data for products: {products}")
