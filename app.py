@@ -64,8 +64,32 @@ def train_prophet_model(data_hash, product_name, sales_data):
         logger.error(f"Model training failed for {product_name}: {str(e)}")
         raise
 
+def calculate_accuracy_metrics(model, df):
+    """Calculates accuracy metrics for the model predictions."""
+    # Get the predictions for historical data
+    historical_forecast = model.predict(model.history)
+    
+    # Calculate Mean Absolute Percentage Error (MAPE)
+    y_true = model.history['y'].values
+    y_pred = historical_forecast['yhat'].values
+    
+    # Calculate MAPE avoiding division by zero
+    mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+    
+    # Calculate Mean Absolute Error (MAE)
+    mae = np.mean(np.abs(y_true - y_pred))
+    
+    return {
+        'mape': round(mape, 2),  # MAPE as percentage
+        'mae': round(mae, 2),    # Mean Absolute Error
+        'accuracy': round(100 - mape, 2)  # Convert MAPE to accuracy percentage
+    }
+
 def make_predictions(model, periods, freq='D'):
     """Generates future sales predictions from the trained model."""
+    # Calculate accuracy metrics
+    accuracy_metrics = calculate_accuracy_metrics(model, model.history)
+    
     # Creating a future date range to predict over
     future = model.make_future_dataframe(
         periods=periods,
@@ -77,7 +101,11 @@ def make_predictions(model, periods, freq='D'):
     forecast = model.predict(future)
     result = forecast[['ds', 'yhat']].rename(columns={'yhat': 'predictedSales'})
     result['ds'] = result['ds'].dt.strftime('%Y-%m-%d')
-    return result.to_dict('records')
+    
+    return {
+        'predictions': result.to_dict('records'),
+        'accuracy_metrics': accuracy_metrics
+    }
 
 @app.route('/predict', methods=['POST'])
 def predict():
